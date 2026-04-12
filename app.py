@@ -1,14 +1,28 @@
+import os
+import tempfile
+import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, Depends, HTTPException
+from pathlib import Path
+
+from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from uuid import UUID
+import traceback
 
+from ui_server.admin import register_admin
 from ui_server.config import settings
 from ui_server.db import get_db, engine, Base
+from ui_server.parser import extract_invoice
 from ui_server.models import Invoice, InvoiceStatus
-from ui_server.schemas import InvoiceUploadResponse, InvoiceResponse, HealthResponse
+from ui_server.schemas import (
+    InvoiceUploadResponse,
+    InvoiceResponse,
+    HealthResponse,
+    InvoiceGetResponse,
+)
 import logging
+from ui_server.models import ExtractionLog
 
 # Setup logging
 logging.basicConfig(
@@ -16,6 +30,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+UPLOADS_DIR = Path(os.getenv("TMP_DIR", "uploads"))
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 # Startup/shutdown
 @asynccontextmanager
@@ -39,7 +55,20 @@ app = FastAPI(
     openapi_url="/openapi.json",  # OpenAPI schema
     lifespan=lifespan,
 )
+register_admin(app)
 
+@app.get("/", tags=["Home"])
+def home(request: Request):
+    base_url = str(request.url).rstrip('/')
+
+    return {
+        "message": "Invoice Pipeline API",
+        "homepage": base_url,
+        "api_docs": base_url + "/docs",
+        "api_reference": base_url + "/redoc",
+        "database_dashboard": base_url + "/admin",
+        "health_check": request.url_for("health"),
+    }
 
 # Health check
 @app.get("/health", tags=["Health"], response_model=HealthResponse)
@@ -53,52 +82,128 @@ def health(db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Database unreachable")
 
 
+ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "gif", "bmp"}
+MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB
+
+
 # Upload endpoint
 @app.post(
     "/invoices/upload",
     summary="Upload invoice file",
-    description="Upload an invoice file (PDF/image/text) for processing",
+    description="Upload an invoice file (PDF/image/text) for OCR extraction",
     tags=["Invoices"],
     response_model=InvoiceUploadResponse,
 )
-def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info(f"Upload started: {file.filename}")
 
-    try:
-        # Read file content
-        content = file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Empty file")
+    # try:
+    # Validate file extension
+    file_ext = file.filename.split(".")[-1].lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file_ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
 
-        # Create invoice record
-        invoice = Invoice(original_filename=file.filename, status=InvoiceStatus.PENDING)
-        db.add(invoice)
-        db.commit()
-        db.refresh(invoice)
+    # Validate file size
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {(MAX_FILE_SIZE >> 10) / 1024:.1f}MB)",
+        )
 
-        logger.info(f"✓ Invoice created: {invoice.id}")
+    # Create invoice record
+    invoice = Invoice(filename=file.filename, file_type=file_ext,status=InvoiceStatus.PENDING)
+    db.add(invoice)
+    db.commit()
+    db.refresh(invoice)
 
-        return InvoiceUploadResponse(invoice_id=invoice.id, status=invoice.status)
+    # Persist
+    (UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}").write_bytes(file_bytes)
 
-    except Exception as e:
-        logger.error(f"Upload failed: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+    # Update invoice with saved filename
+    invoice.filename = f"{invoice.id}.{invoice.file_type}"
+    db.commit()
+    db.refresh(invoice)
+
+    return InvoiceUploadResponse(
+        invoice_id=invoice.id,
+        filename=invoice.filename,
+        status=invoice.status.value,
+        extracted_data=invoice.extracted_data,
+        extraction_confidence=invoice.extraction_confidence,
+        error_message=invoice.error_message,
+        created_at=invoice.created_at,
+    )
+    #
+    # except HTTPException:
+    #     raise
+    # except Exception as e:
+    #     logger.error(f"Upload failed: {str(e)}")
+    #     raise HTTPException(status_code=500, detail="Extraction failed")
 
 
 # Get invoice status
 @app.get("/invoices/{invoice_id}", tags=["Invoices"], response_model=InvoiceResponse)
-def get_invoice(invoice_id: UUID, db: Session = Depends(get_db)):
-    stmt = select(Invoice).where(Invoice.id == invoice_id)
-    result = db.execute(stmt)
-    invoice = result.scalar_one_or_none()
-
+async def get_invoice(invoice_id: str, db: Session = Depends(get_db)):
+    """
+    Get invoice by ID.
+    Returns: parsed extracted_data + status
+    """
+    invoice: Invoice = (
+        db.query(Invoice).filter(Invoice.id == uuid.UUID(invoice_id)).first()
+    )
     if not invoice:
-        logger.warning(f"Invoice not found: {invoice_id}")
-        raise HTTPException(status_code=404, detail="Invoice not found")
+        raise HTTPException(status_code=404, detail=f"Invoice not found {invoice_id}")
 
-    logger.info(f"Fetched invoice {invoice_id}: status={invoice.status}")
-    return InvoiceResponse.model_validate(invoice)
+    if invoice.status in [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]:
+        invoice = extract_invoice(db, invoice)
+
+    return InvoiceResponse(
+        id=invoice_id,
+        filename=invoice.filename,
+        status=invoice.status,
+        extracted_data=invoice.extracted_data,
+        # extraction_confidence=invoice.extraction_confidence,
+        error_message=invoice.error_message,
+        created_at=invoice.created_at,
+        updated_at=invoice.updated_at,
+    )
+
+
+@app.get(
+    "/invoices/{invoice_id}/logs",
+    summary="Get extraction logs",
+    description="View detailed extraction workflow logs for debugging",
+    tags=["Debug"],
+)
+async def get_extraction_logs(invoice_id: str, db: Session = Depends(get_db)):
+    """
+    Get extraction workflow logs for an invoice.
+    """
+
+    logs = db.query(ExtractionLog).filter(ExtractionLog.invoice_id == invoice_id).all()
+    return {
+        "invoice_id": invoice_id,
+        "logs": [
+            {
+                "step": log.step,
+                "status": log.status,
+                "details": log.details,
+                "timestamp": log.timestamp,
+            }
+            for log in logs
+        ],
+    }
+
+
+@app.exception_handler(Exception)
+async def debug_exception_handler(_: Request, exc: Exception):
+    return Response(
+        content="".join(traceback.TracebackException.from_exception(exc).format())
+    )
 
 
 if __name__ == "__main__":
