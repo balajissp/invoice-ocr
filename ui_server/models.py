@@ -28,7 +28,9 @@ class Invoice(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    logs = relationship("ExtractionLog", back_populates="invoice", cascade="all, delete-orphan")
+    logs = relationship(
+        "ExtractionLog", back_populates="invoice", cascade="all, delete-orphan"
+    )
 
 
 class ExtractionLog(Base):
