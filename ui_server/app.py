@@ -1,28 +1,25 @@
+import logging
 import os
-import tempfile
+import traceback
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Response
-from sqlalchemy.orm import Session
 from sqlalchemy import select
-from uuid import UUID
-import traceback
+from sqlalchemy.orm import Session
 
 from ui_server.admin import register_admin
 from ui_server.config import settings
 from ui_server.db import get_db, engine, Base
-from ui_server.parser import extract_invoice
+from ui_server.models import ExtractionLog
 from ui_server.models import Invoice, InvoiceStatus
+from ui_server.parser import extract_invoice
 from ui_server.schemas import (
     InvoiceUploadResponse,
     InvoiceResponse,
     HealthResponse,
-    InvoiceGetResponse,
 )
-import logging
-from ui_server.models import ExtractionLog
 
 # Setup logging
 logging.basicConfig(
@@ -30,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-UPLOADS_DIR = Path(os.getenv("TMP_DIR", "uploads"))
+UPLOADS_DIR = Path(os.getenv("TMP_DIR", "../.temp"))
 UPLOADS_DIR.mkdir(exist_ok=True)
 
 
@@ -76,13 +73,9 @@ def home(request: Request):
 # Health check
 @app.get("/health", tags=["Health"], response_model=HealthResponse)
 def health(db: Session = Depends(get_db)):
-    try:
-        # Test DB connection
-        db.execute(select(1))
-        return HealthResponse(status="healthy", database="connected")
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail="Database unreachable")
+    # Test DB connection
+    db.execute(select(1))
+    return HealthResponse(status="healthy", database="connected")
 
 
 ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "gif", "bmp"}
@@ -116,7 +109,6 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
             status_code=413,
             detail=f"File too large (max {(MAX_FILE_SIZE >> 10) / 1024:.1f}MB)",
         )
-
     # Create invoice record
     invoice = Invoice(
         filename=file.filename, file_type=file_ext, status=InvoiceStatus.PENDING
@@ -124,14 +116,14 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     db.add(invoice)
     db.commit()
     db.refresh(invoice)
-
-    # Persist
-    (UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}").write_bytes(file_bytes)
-
     # Update invoice with saved filename
     invoice.filename = f"{invoice.id}.{invoice.file_type}"
     db.commit()
     db.refresh(invoice)
+
+    # Persist
+    (UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}").write_bytes(file_bytes)
+
 
     return InvoiceUploadResponse(
         invoice_id=invoice.id,

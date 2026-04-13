@@ -1,15 +1,16 @@
-import io
+import logging
 import os
+import re
 from pathlib import Path
+
 from liteparse import LiteParse
 from sqlalchemy.orm import Session
-from ui_server.models import Invoice, InvoiceStatus
-import re
 
+from ui_server.models import Invoice, InvoiceStatus
 from ui_server.schemas import ExtractedDataSchema, ExtractionConfidenceSchema
 
-UPLOADS_DIR = Path(os.getenv("TMP_DIR", "uploads"))
-
+UPLOADS_DIR = Path(os.getenv("TMP_DIR", "../.temp"))
+logger = logging.getLogger(__name__)
 
 def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
     """Extract text from file and populate invoice record."""
@@ -22,7 +23,7 @@ def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
     if file_ext in [".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp"]:
         # Parse file directly - LiteParse handles PDF/image conversion
         result = parser.parse(file_bytes)
-        print(result)
+        logger.debug(result)
         if hasattr(result, "text"):
             raw_text = result.text.strip()
         else:

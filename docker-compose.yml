@@ -30,5 +30,19 @@ services:
     volumes:
       - ./:/app
 
+  tests:
+    build: .
+    container_name: invoice-tests
+    command: python -m pytest tests/test_api.py -v
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    volumes:
+      - ./:/app
+
 volumes:
   postgres_data:

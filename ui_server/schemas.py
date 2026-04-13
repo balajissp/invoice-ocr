@@ -1,11 +1,10 @@
-from uuid import UUID
 from datetime import datetime
 from typing import Optional, Dict, Any
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
 from ui_server.models import InvoiceStatus
-from pydantic import BaseModel, Field, ConfigDict
-from uuid import UUID
-from datetime import datetime
-from typing import Optional, Dict, Any
 
 
 class ExtractedDataSchema(BaseModel):

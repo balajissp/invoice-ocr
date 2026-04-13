@@ -1,8 +1,8 @@
+import tempfile
+from pathlib import Path
+
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
-from pathlib import Path
-import tempfile
-import os
 
 
 class Settings(BaseSettings):
