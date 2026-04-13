@@ -7,6 +7,7 @@ from ui_server.models import Invoice, ExtractionLog
 
 class InvoiceAdmin(ModelView, model=Invoice):
     """Read-only invoice view."""
+
     page_size = 20
     can_create = False
     can_edit = False
@@ -26,6 +27,7 @@ class InvoiceAdmin(ModelView, model=Invoice):
 
 class LogAdmin(ModelView, model=ExtractionLog):
     """Read-only extraction log view."""
+
     page_size = 50
     can_create = False
     can_edit = False

@@ -22,7 +22,9 @@ def upgrade() -> None:
     """Add OCR-related columns and update status enum."""
     # Add new columns to invoices
     op.add_column("invoices", sa.Column("raw_ocr_output", sa.Text(), nullable=True))
-    op.add_column("invoices", sa.Column("extraction_confidence", sa.JSON(), nullable=True))
+    op.add_column(
+        "invoices", sa.Column("extraction_confidence", sa.JSON(), nullable=True)
+    )
     op.add_column("invoices", sa.Column("file_type", sa.String(10), nullable=True))
 
     # Update enum to include PARTIAL

@@ -30,7 +30,9 @@ class Invoice(Base):
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=True)
     file_type = Column(String(10), nullable=True)
-    status = Column(Enum(InvoiceStatus, native_enum=True), default=InvoiceStatus.PENDING)
+    status = Column(
+        Enum(InvoiceStatus, native_enum=True), default=InvoiceStatus.PENDING
+    )
     extracted_data = Column(JSONB, nullable=True)  # Flexible schema
     error_message = Column(Text, nullable=True)
     raw_ocr_output = Column(Text, nullable=True)

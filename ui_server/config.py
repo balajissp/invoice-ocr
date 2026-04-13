@@ -1,3 +1,4 @@
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 from pathlib import Path
 import tempfile
@@ -19,9 +20,7 @@ class Settings(BaseSettings):
 
     database_url: str
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = ConfigDict(extra="allow")
 
 
 settings = Settings()

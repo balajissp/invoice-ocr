@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 UPLOADS_DIR = Path(os.getenv("TMP_DIR", "uploads"))
 UPLOADS_DIR.mkdir(exist_ok=True)
 
+
 # Startup/shutdown
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
@@ -57,9 +58,10 @@ app = FastAPI(
 )
 register_admin(app)
 
+
 @app.get("/", tags=["Home"])
 def home(request: Request):
-    base_url = str(request.url).rstrip('/')
+    base_url = str(request.url).rstrip("/")
 
     return {
         "message": "Invoice Pipeline API",
@@ -69,6 +71,7 @@ def home(request: Request):
         "database_dashboard": base_url + "/admin",
         "health_check": request.url_for("health"),
     }
+
 
 # Health check
 @app.get("/health", tags=["Health"], response_model=HealthResponse)
@@ -115,7 +118,9 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
         )
 
     # Create invoice record
-    invoice = Invoice(filename=file.filename, file_type=file_ext,status=InvoiceStatus.PENDING)
+    invoice = Invoice(
+        filename=file.filename, file_type=file_ext, status=InvoiceStatus.PENDING
+    )
     db.add(invoice)
     db.commit()
     db.refresh(invoice)

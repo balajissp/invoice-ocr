@@ -10,6 +10,7 @@ from ui_server.schemas import ExtractedDataSchema, ExtractionConfidenceSchema
 
 UPLOADS_DIR = Path(os.getenv("TMP_DIR", "uploads"))
 
+
 def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
     """Extract text from file and populate invoice record."""
 

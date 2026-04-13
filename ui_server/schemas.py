@@ -23,7 +23,6 @@ class ExtractedDataSchema(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-
 class ExtractionConfidenceSchema(BaseModel):
     """Confidence scores for extracted fields."""
 
@@ -33,7 +32,6 @@ class ExtractionConfidenceSchema(BaseModel):
     vendor_name: float = 0.0
     total_amount: float = 0.0
     model_config = ConfigDict(extra="allow")
-
 
 
 class InvoiceUploadResponse(BaseModel):
@@ -49,7 +47,6 @@ class InvoiceUploadResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-
 class InvoiceGetResponse(BaseModel):
     """Response when retrieving an invoice."""
 
@@ -62,7 +59,6 @@ class InvoiceGetResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(extra="allow")
-
 
 
 class InvoiceResponse(BaseModel):
