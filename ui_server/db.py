@@ -5,10 +5,7 @@ from sqlalchemy.orm import sessionmaker, Session, declarative_base
 
 from ui_server.config import settings
 
-engine = create_engine(
-    settings.database_url,
-    echo=False,
-)
+engine = create_engine(settings.postgres_url, echo=False)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

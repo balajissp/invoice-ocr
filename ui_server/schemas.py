@@ -39,9 +39,6 @@ class InvoiceUploadResponse(BaseModel):
     invoice_id: UUID
     status: InvoiceStatus
     filename: str
-    extracted_data: Optional[ExtractedDataSchema] = None
-    extraction_confidence: Optional[ExtractionConfidenceSchema] = None
-    error_message: Optional[str] = None
     created_at: datetime
     model_config = ConfigDict(extra="allow")
 

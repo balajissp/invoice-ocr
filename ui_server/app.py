@@ -10,25 +10,31 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ui_server.admin import register_admin
-from ui_server.config import settings
+from ui_server.config import (
+    settings,
+    ALLOWED_EXTENSIONS,
+    MAX_FILE_SIZE,
+    construct_file_path,
+)
 from ui_server.db import get_db, engine, Base
 from ui_server.models import ExtractionLog
 from ui_server.models import Invoice, InvoiceStatus
-from ui_server.parser import extract_invoice, ALLOWED_EXTENSIONS, MAX_FILE_SIZE
+from ui_server.parser import (
+    extract_text_from_file,
+    parse_text,
+)
 from ui_server.schemas import (
     InvoiceUploadResponse,
     InvoiceResponse,
     HealthResponse,
 )
+from fastapi import BackgroundTasks
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-
-UPLOADS_DIR = Path(os.getenv("TMP_DIR", "../.temp"))
-UPLOADS_DIR.mkdir(exist_ok=True)
 
 
 # Startup/shutdown
@@ -76,10 +82,28 @@ def home(request: Request):
 
 # Health check
 @app.get("/health", tags=["Health"], response_model=HealthResponse)
-def health(db: Session = Depends(get_db)):
+async def health(db: Session = Depends(get_db)):
     # Test DB connection
     db.execute(select(1))
     return HealthResponse(status="healthy", database="connected")
+
+
+def simple_chained_task(invoice_id: str, file_type: str, db: Session):
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    invoice.status = InvoiceStatus.EXTRACTING
+    db.commit()
+    db.refresh(invoice)
+    workflow_input = str(construct_file_path(invoice_id, file_type))
+    raw_text = extract_text_from_file(workflow_input)
+    data, confidence = parse_text(raw_text)
+
+    invoice = db.query(Invoice).filter(Invoice.id == invoice_id).first()
+    invoice.status = InvoiceStatus.COMPLETED
+    invoice.raw_ocr_output = raw_text
+    invoice.extracted_data = data.model_dump()
+    invoice.extraction_confidence = confidence.model_dump()
+    db.commit()
+    db.refresh(invoice)
 
 
 # Upload endpoint
@@ -91,13 +115,16 @@ def health(db: Session = Depends(get_db)):
     response_model=InvoiceUploadResponse,
     status_code=202,
 )
-async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_invoice(
+    bg_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
     logger.info(f"Upload started: {file.filename}")
 
-    # try:
     # Validate file extension
     file_ext = file.filename.split(".")[-1].lower()
-    if file_ext not in ALLOWED_EXTENSIONS:
+    if f".{file_ext}" not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type: {file_ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
@@ -118,20 +145,20 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     db.commit()
     db.refresh(invoice)
     # Update invoice with saved filename
-    invoice.filename = f"{invoice.id}.{invoice.file_type}"
+    file_path = construct_file_path(invoice.id, invoice.file_type)
+    invoice.filename = file_path.name
     db.commit()
     db.refresh(invoice)
 
     # Persist
-    (UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}").write_bytes(file_bytes)
+    file_path.write_bytes(file_bytes)
+    # add background task
+    bg_tasks.add_task(simple_chained_task, invoice.id, invoice.file_type, db)
 
     return InvoiceUploadResponse(
         invoice_id=invoice.id,
         filename=invoice.filename,
         status=invoice.status.value,
-        extracted_data=invoice.extracted_data,
-        extraction_confidence=invoice.extraction_confidence,
-        error_message=invoice.error_message,
         created_at=invoice.created_at,
     )
 
@@ -148,9 +175,6 @@ async def get_invoice(invoice_id: str, db: Session = Depends(get_db)):
     )
     if not invoice:
         raise HTTPException(status_code=404, detail=f"Invoice not found {invoice_id}")
-
-    if invoice.status in [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]:
-        invoice = await extract_invoice(db, invoice)
 
     return InvoiceResponse(
         id=invoice_id,

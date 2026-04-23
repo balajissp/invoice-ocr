@@ -8,7 +8,7 @@ load_dotenv()
 from ui_server.models import Base
 
 config = context.config
-database_url = os.getenv("DATABASE_URL")
+database_url = os.getenv("POSTGRES_URL")
 if not database_url:
     raise EnvironmentError("Database URL not defined!")
 config.set_main_option("sqlalchemy.url", database_url)

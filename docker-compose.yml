@@ -20,7 +20,7 @@ services:
     build: .
     container_name: invoice-app
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: ${POSTGRES_URL}
       TMP_DIR: ${TMP_DIR:-/tmp/invoices}
     ports:
       - "${FASTAPI_PORT:-8000}:8000"
@@ -35,7 +35,7 @@ services:
     container_name: invoice-tests
     command: python -m pytest tests/test_api.py -v
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: ${POSTGRES_URL}
     depends_on:
       db:
         condition: service_healthy
