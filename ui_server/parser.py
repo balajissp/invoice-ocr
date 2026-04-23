@@ -1,5 +1,4 @@
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -11,7 +10,6 @@ from ui_server.models import Invoice, InvoiceStatus
 from ui_server.schemas import (
     ExtractedDataSchema,
     ExtractionConfidenceSchema,
-    ExtractInvoiceResult,
 )
 
 logger = logging.getLogger(__name__)

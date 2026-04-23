@@ -16,6 +16,34 @@ services:
       timeout: 5s
       retries: 5
 
+  temporal:
+    image: temporalio/temporal
+    mem_limit: 1g
+    container_name: temporal
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+    command: server start-dev --ip 0.0.0.0
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7233"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  temporal-worker:
+    build: .
+    container_name: temporal-worker
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      - TEMPORAL_HOST=temporal
+      - TEMPORAL_PORT=7233
+    command: python temporal_worker.py
+    volumes:
+      - shared_uploads:/app/.temp
+
   app:
     build: .
     container_name: invoice-app
@@ -27,8 +55,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      temporal:
+        condition: service_healthy
     volumes:
       - ./:/app
+      - shared_uploads:/app/.temp
 
   tests:
     build: .
@@ -43,6 +74,8 @@ services:
         condition: service_started
     volumes:
       - ./:/app
+      - shared_uploads:/app/.temp
 
 volumes:
   postgres_data:
+  shared_uploads:

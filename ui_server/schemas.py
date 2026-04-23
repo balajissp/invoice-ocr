@@ -71,3 +71,4 @@ class InvoiceResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     database: str
+    temporal: str

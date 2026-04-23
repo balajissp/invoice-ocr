@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     tmp_dir: Path = Path() / ".temp"
     postgres_url: str = ""
+    temporal_url: str = "temporal:7233"
     debug: bool = False
 
     model_config = ConfigDict(extra="allow")
@@ -36,4 +37,5 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 def construct_file_path(invoice_id, file_type):
+    # TODO: should we move it inside Settings class?
     return (settings.tmp_dir / f"{invoice_id}.{file_type}").resolve().absolute()

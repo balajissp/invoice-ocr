@@ -1,13 +1,15 @@
 import logging
-import os
 import traceback
 import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from temporalio.client import Client
+
+load_dotenv()
 
 from ui_server.admin import register_admin
 from ui_server.config import (
@@ -19,6 +21,7 @@ from ui_server.config import (
 from ui_server.db import get_db, engine, Base
 from ui_server.models import ExtractionLog
 from ui_server.models import Invoice, InvoiceStatus
+from ui_server.workflows import InvoiceProcessingWorkflow
 from ui_server.parser import (
     extract_text_from_file,
     parse_text,
@@ -85,7 +88,8 @@ def home(request: Request):
 async def health(db: Session = Depends(get_db)):
     # Test DB connection
     db.execute(select(1))
-    return HealthResponse(status="healthy", database="connected")
+    client = await Client.connect(settings.temporal_url)
+    return HealthResponse(status="healthy", database="connected", temporal="connected")
 
 
 def simple_chained_task(invoice_id: str, file_type: str, db: Session):
@@ -153,12 +157,19 @@ async def upload_invoice(
     # Persist
     file_path.write_bytes(file_bytes)
     # add background task
-    bg_tasks.add_task(simple_chained_task, invoice.id, invoice.file_type, db)
+    # bg_tasks.add_task(simple_chained_task, invoice.id, invoice.file_type, db)
+    client = await Client.connect(settings.temporal_url)
+    await client.start_workflow(
+        InvoiceProcessingWorkflow.run,
+        args=[invoice.id, invoice.file_type],
+        id=f"invoice-{invoice.id}",
+        task_queue="invoice-processing",
+    )
 
     return InvoiceUploadResponse(
         invoice_id=invoice.id,
         filename=invoice.filename,
-        status=invoice.status.value,
+        status=invoice.status,
         created_at=invoice.created_at,
     )
 

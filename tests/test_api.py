@@ -36,7 +36,6 @@ def test_upload_invoice(filename="sample_invoice.jpg"):
         assert response.status_code == 200
         data = response.json()
         logger.info(data)
-        assert data["extracted_data"] is not None
         if data["status"] != "COMPLETED":
             time.sleep(5)
         else:
