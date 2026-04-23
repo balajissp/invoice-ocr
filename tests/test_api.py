@@ -16,11 +16,13 @@ def test_upload_invoice(filename="sample_invoice.jpg"):
     with open(sample_invoice, "rb") as f:
         response = client.post(
             "/invoices/upload",
-            files={"file": (sample_invoice.name, f, "application/jpg")},
+            files={
+                "file": (sample_invoice.name, f, f"application/{sample_invoice.suffix}")
+            },
         )
-        print(response.json())
+        logger.info(response.json())
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     data = response.json()
     assert data["status"] == "PENDING"
     assert "invoice_id" in data
@@ -35,13 +37,13 @@ def test_upload_invoice(filename="sample_invoice.jpg"):
         data = response.json()
         logger.info(data)
         assert data["extracted_data"] is not None
-        if data["status"] == "PARTIAL":
+        if data["status"] != "COMPLETED":
             time.sleep(5)
         else:
             break
     else:
         # did not work ever after multiple retries, notify user
-        assert data["status"] != "PARTIAL", "Unable to parse despite multiple retries"
+        assert data["status"] != "COMPLETED", "Unable to parse despite multiple retries"
 
 
 def test_upload_pdf():

@@ -53,6 +53,13 @@ app = FastAPI(
 register_admin(app)
 
 
+@app.exception_handler(Exception)
+async def debug_exception_handler(_: Request, exc: Exception):
+    return Response(
+        content="".join(traceback.TracebackException.from_exception(exc).format())
+    )
+
+
 @app.get("/", tags=["Home"])
 def home(request: Request):
     base_url = str(request.url).rstrip("/")
@@ -82,6 +89,7 @@ def health(db: Session = Depends(get_db)):
     description="Upload an invoice file (PDF/image/text) for OCR extraction",
     tags=["Invoices"],
     response_model=InvoiceUploadResponse,
+    status_code=202,
 )
 async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get_db)):
     logger.info(f"Upload started: {file.filename}")
@@ -180,13 +188,6 @@ async def get_extraction_logs(invoice_id: str, db: Session = Depends(get_db)):
             for log in logs
         ],
     }
-
-
-@app.exception_handler(Exception)
-async def debug_exception_handler(_: Request, exc: Exception):
-    return Response(
-        content="".join(traceback.TracebackException.from_exception(exc).format())
-    )
 
 
 if __name__ == "__main__":
