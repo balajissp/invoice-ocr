@@ -14,7 +14,7 @@ from ui_server.config import settings
 from ui_server.db import get_db, engine, Base
 from ui_server.models import ExtractionLog
 from ui_server.models import Invoice, InvoiceStatus
-from ui_server.parser import extract_invoice
+from ui_server.parser import extract_invoice, ALLOWED_EXTENSIONS, MAX_FILE_SIZE
 from ui_server.schemas import (
     InvoiceUploadResponse,
     InvoiceResponse,
@@ -37,10 +37,10 @@ async def lifespan(app_instance: FastAPI):
     # Startup: Create tables
     logger.info("Creating database tables...")
     Base.metadata.create_all(bind=engine)
-    logger.info("✓ Database ready")
+    logger.info("Database ready")
     yield
     # Shutdown
-    logger.info("Shutting down...")
+    logger.info("Database shutting down...")
     engine.dispose()
 
 
@@ -48,9 +48,6 @@ app = FastAPI(
     title="Invoice Pipeline API",
     description="REST API for invoice processing and extraction",
     version="1.0.0",
-    docs_url="/docs",  # Swagger UI
-    redoc_url="/redoc",  # ReDoc (alternative)
-    openapi_url="/openapi.json",  # OpenAPI schema
     lifespan=lifespan,
 )
 register_admin(app)
@@ -76,10 +73,6 @@ def health(db: Session = Depends(get_db)):
     # Test DB connection
     db.execute(select(1))
     return HealthResponse(status="healthy", database="connected")
-
-
-ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "gif", "bmp"}
-MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB
 
 
 # Upload endpoint
@@ -124,7 +117,6 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     # Persist
     (UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}").write_bytes(file_bytes)
 
-
     return InvoiceUploadResponse(
         invoice_id=invoice.id,
         filename=invoice.filename,
@@ -134,12 +126,6 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
         error_message=invoice.error_message,
         created_at=invoice.created_at,
     )
-    #
-    # except HTTPException:
-    #     raise
-    # except Exception as e:
-    #     logger.error(f"Upload failed: {str(e)}")
-    #     raise HTTPException(status_code=500, detail="Extraction failed")
 
 
 # Get invoice status
@@ -156,7 +142,7 @@ async def get_invoice(invoice_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail=f"Invoice not found {invoice_id}")
 
     if invoice.status in [InvoiceStatus.PENDING, InvoiceStatus.PARTIAL]:
-        invoice = extract_invoice(db, invoice)
+        invoice = await extract_invoice(db, invoice)
 
     return InvoiceResponse(
         id=invoice_id,

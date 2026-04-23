@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 
@@ -18,10 +19,12 @@ class Settings(BaseSettings):
     tmp_dir: Path = Path(tempfile.gettempdir()) / "invoices"
     debug: bool = True
 
-    database_url: str
+    database_url: str = ""
 
     model_config = ConfigDict(extra="allow")
 
 
 settings = Settings()
+if os.name == "nt":
+    settings.database_url = f"postgresql+psycopg://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
 settings.tmp_dir.mkdir(parents=True, exist_ok=True)

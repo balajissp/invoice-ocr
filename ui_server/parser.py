@@ -10,30 +10,23 @@ from ui_server.models import Invoice, InvoiceStatus
 from ui_server.schemas import ExtractedDataSchema, ExtractionConfidenceSchema
 
 UPLOADS_DIR = Path(os.getenv("TMP_DIR", "../.temp"))
-logger = logging.getLogger(__name__)
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
-def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
+logger = logging.getLogger(__name__)
+parser = LiteParse()
+
+
+async def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
     """Extract text from file and populate invoice record."""
 
     # Get file type and extract text
-    file_bytes = (UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}").read_bytes()
+    file_path = UPLOADS_DIR / f"{invoice.id}.{invoice.file_type}"
     file_ext = invoice.file_type
-    parser = LiteParse()
 
-    if file_ext in [".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp"]:
-        # Parse file directly - LiteParse handles PDF/image conversion
-        result = parser.parse(file_bytes)
-        logger.debug(result)
-        if hasattr(result, "text"):
-            raw_text = result.text.strip()
-        else:
-            raw_text = str(result)
-    else:
-        raw_text = ""
-    print(raw_text)
-    # Store raw OCR output
+    raw_text = await parse_blob(file_path)
+
     invoice.raw_ocr_output = raw_text
-
     # Parse extracted text
     if raw_text:
         extracted_data, confidence = parse_text(raw_text)
@@ -48,6 +41,20 @@ def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
 
     db.commit()
     return invoice
+
+
+async def parse_blob(file_path: Path) -> str:
+    if file_path.suffix in ALLOWED_EXTENSIONS:
+        # Parse file directly - LiteParse handles PDF/image conversion
+        result = await parser.parse_async(file_path)
+        logger.debug(f"{file_path=}, {result=}")
+        if hasattr(result, "text"):
+            raw_text = result.text.strip()
+        else:
+            raw_text = str(result)
+    else:
+        raw_text = ""  # Not supported file type
+    return raw_text
 
 
 def parse_text(raw_text: str) -> tuple:
