@@ -89,3 +89,15 @@ class ExtractionOutput(BaseModel):
 class ParseOutput(BaseModel):
     data: dict
     confidence: dict
+
+
+class LLMRequest(BaseModel):
+    model: str
+    messages: list
+    temperature: float = 0.7
+    max_tokens: int | None = None
+
+
+class LLMResponse(BaseModel):
+    content: str
+    usage: dict | None = None

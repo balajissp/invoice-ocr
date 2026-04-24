@@ -14,21 +14,17 @@ from invoiceocr.models.config import (
     ALLOWED_EXTENSIONS,
     MAX_FILE_SIZE,
 )
-from invoiceocr.models.db import engine, Base, get_db
 from invoiceocr.models.db import ExtractionLog
 from invoiceocr.models.db import Invoice
-from invoiceocr.workflows.tasks import (
-    InvoiceProcessingWorkflow,
-    extract_text_from_file,
-    parse_text,
-)
+from invoiceocr.models.db import engine, Base, get_db
 from invoiceocr.models.schemas import (
     InvoiceUploadResponse,
     InvoiceResponse,
     HealthResponse,
     InvoiceStatus,
 )
-from fastapi import BackgroundTasks
+from invoiceocr.workflows.activities import extract_text_from_file, parse_text
+from invoiceocr.workflows.workflows import InvoiceProcessingWorkflow
 
 # Setup logging
 logging.basicConfig(
@@ -141,7 +137,7 @@ async def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
     status_code=202,
 )
 async def upload_invoice(
-    bg_tasks: BackgroundTasks,
+    # bg_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):

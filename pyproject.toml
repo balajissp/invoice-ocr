@@ -20,6 +20,8 @@ dependencies = [
     "httpx==0.28.1",
     "sqladmin==0.24.0",
     "temporalio==1.26.0",
+    "openai==2.32.0",
+    "langfuse==4.5.1",
 ]
 [project.optional-dependencies]
 dev = [

@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     temporal_url: str = "temporal:7233"
     debug: bool = False
 
+    openai_api_key: str = ""
+
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = ""
+
     model_config = ConfigDict(extra="allow")
 
     def build_postgres_url(self):

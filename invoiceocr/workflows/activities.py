@@ -1,11 +1,10 @@
+import json
 import logging
 import re
-from datetime import timedelta
 from pathlib import Path
 
 from liteparse import LiteParse
 from temporalio import activity, workflow
-from temporalio.common import RetryPolicy
 
 from invoiceocr.models.config import settings, ALLOWED_EXTENSIONS
 from invoiceocr.models.db import get_db_context, Invoice
@@ -17,7 +16,67 @@ from invoiceocr.models.schemas import (
     ParseOutput,
 )
 
+with workflow.unsafe.imports_passed_through():
+    from langfuse.openai import AsyncOpenAI
+
 logger = logging.getLogger(__name__)
+
+
+@activity.defn
+async def parse_text_with_llm(raw_text: str) -> ParseOutput:
+    """Parse extracted text using ChatGPT via Langfuse."""
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        max_retries=0,
+    )
+
+    system_prompt = """You are an invoice parsing expert. Extract structured data from the provided invoice text.
+
+    Return a JSON object with these fields:
+    {
+        "invoice_number": string or null,
+        "invoice_date": string (YYYY-MM-DD format) or null,
+        "due_date": string (YYYY-MM-DD format) or null,
+        "vendor_name": string or null,
+        "vendor_address": string or null,
+        "total_amount": float or null,
+        "currency": string or null,
+        "line_items": array of {description, quantity, unit_price, total} or null,
+        "notes": string or null,
+        "confidence": {
+            "invoice_number": float (0-1),
+            "invoice_date": float (0-1),
+            "due_date": float (0-1),
+            "vendor_name": float (0-1),
+            "total_amount": float (0-1)
+        }
+    }
+
+    Only return valid JSON, no additional text."""
+
+    response = await client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": raw_text},
+        ],
+        temperature=0.3,
+    )
+
+    response_text = response.choices[0].message.content
+    parsed_response = json.loads(response_text)
+
+    # Extract confidence scores
+    confidence_dict = parsed_response.pop("confidence", {})
+
+    # Create schemas
+    data = ExtractedDataSchema(**parsed_response)
+    confidence = ExtractionConfidenceSchema(**confidence_dict)
+
+    return ParseOutput(
+        data=data.model_dump(),
+        confidence=confidence.model_dump(),
+    )
 
 
 @activity.defn
@@ -55,50 +114,6 @@ def save_extraction_results(
             invoice.raw_ocr_output = raw_text
             invoice.extracted_data = data
             invoice.extraction_confidence = confidence
-
-
-@workflow.defn
-class InvoiceProcessingWorkflow:
-    @workflow.run
-    async def run(self, invoice_id: str, file_type: str) -> None:
-        retry_policy = RetryPolicy(
-            initial_interval=timedelta(seconds=1),
-            maximum_interval=timedelta(seconds=10),
-            maximum_attempts=3,
-        )
-
-        await workflow.execute_activity(
-            update_invoice_status,
-            args=[invoice_id, InvoiceStatus.EXTRACTING],
-            schedule_to_close_timeout=timedelta(seconds=30),
-            retry_policy=retry_policy,
-        )
-
-        extraction = await workflow.execute_activity(
-            extract_text_activity,
-            args=[invoice_id, file_type],
-            schedule_to_close_timeout=timedelta(seconds=30),
-            retry_policy=retry_policy,
-        )
-
-        parse_output = await workflow.execute_activity(
-            parse_text_activity,
-            extraction.raw_text,
-            schedule_to_close_timeout=timedelta(seconds=30),
-            retry_policy=retry_policy,
-        )
-
-        await workflow.execute_activity(
-            save_extraction_results,
-            args=[
-                invoice_id,
-                extraction.raw_text,
-                parse_output.data,
-                parse_output.confidence,
-            ],
-            schedule_to_close_timeout=timedelta(seconds=30),
-            retry_policy=retry_policy,
-        )
 
 
 def extract_text_from_file(file_path: str) -> str:
