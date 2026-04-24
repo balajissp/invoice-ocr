@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from ui_server.app import app
+from invoiceocr.app.main import app
 
 client = TestClient(app)
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def test_upload_invoice(filename="sample_invoice.jpg"):
     # test retrieval
     sample_invoice_id = data["invoice_id"]
 
-    for attempt in range(1, 6):  # 5 attempts
+    for attempt in range(5):  # 5 attempts
         response = client.get(f"/invoices/{sample_invoice_id}")
 
         assert response.status_code == 200
@@ -42,7 +42,7 @@ def test_upload_invoice(filename="sample_invoice.jpg"):
             break
     else:
         # did not work ever after multiple retries, notify user
-        assert data["status"] != "COMPLETED", "Unable to parse despite multiple retries"
+        assert data["status"] == "COMPLETED", "Unable to parse despite multiple retries"
 
 
 def test_upload_pdf():

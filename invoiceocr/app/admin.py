@@ -1,8 +1,7 @@
 # SQLAdmin Dashboard
 from sqladmin import ModelView, Admin
 
-from ui_server.db import engine
-from ui_server.models import Invoice, ExtractionLog
+from invoiceocr.models.db import engine, Invoice, ExtractionLog
 
 
 class InvoiceAdmin(ModelView, model=Invoice):

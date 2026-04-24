@@ -2,6 +2,12 @@ from pathlib import Path
 
 from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp"}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 class Settings(BaseSettings):
@@ -24,18 +30,11 @@ class Settings(BaseSettings):
     def build_postgres_url(self):
         self.postgres_url = f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
+    def construct_file_path(self, invoice_id, file_type):
+        return (self.tmp_dir / f"{invoice_id}.{file_type}").resolve().absolute()
+
 
 settings = Settings()
 settings.tmp_dir.mkdir(parents=True, exist_ok=True)
 if settings.debug:
     settings.build_postgres_url()
-
-# PARSER CONFIG
-
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif", ".bmp"}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-def construct_file_path(invoice_id, file_type):
-    # TODO: should we move it inside Settings class?
-    return (settings.tmp_dir / f"{invoice_id}.{file_type}").resolve().absolute()

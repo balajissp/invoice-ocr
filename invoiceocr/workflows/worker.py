@@ -1,24 +1,23 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-from dotenv import load_dotenv
 from temporalio import workflow
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-load_dotenv()
-with workflow.unsafe.imports_passed_through():
-    from ui_server.workflows import (
-        InvoiceProcessingWorkflow,
-        update_invoice_status,
-        extract_text_activity,
-        parse_text_activity,
-        save_extraction_results,
-    )
+# with workflow.unsafe.imports_passed_through():
+from invoiceocr.models.config import settings
+from invoiceocr.workflows.tasks import (
+    update_invoice_status,
+    extract_text_activity,
+    parse_text_activity,
+    save_extraction_results,
+    InvoiceProcessingWorkflow,
+)
 
 
 async def main():
-    client = await Client.connect("temporal:7233")
+    client = await Client.connect(settings.temporal_url)
     worker = Worker(
         client,
         task_queue="invoice-processing",

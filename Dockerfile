@@ -16,8 +16,11 @@ RUN pip install --no-cache-dir -e .
 # Copy app code
 COPY . .
 
+# Add to python PATH
+ENV PYTHONPATH=/app:$PYTHONPATH
+
 # Expose FastAPI port
 EXPOSE 8000
 
 # Run FastAPI
-CMD ["sh", "-c", "alembic upgrade head && uvicorn ui_server.app:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn invoiceocr.app.main:app --host 0.0.0.0 --port 8000"]

@@ -1,31 +1,35 @@
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from enum import Enum as PyEnum
 
-from sqlalchemy import Column, String, DateTime, Enum, Text, ForeignKey, Integer
+from sqlalchemy import (
+    Column,
+    String,
+    DateTime,
+    Enum,
+    Text,
+    ForeignKey,
+    Integer,
+    create_engine,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, sessionmaker, declarative_base, Session
 
-from ui_server.db import Base
-
-
-class InvoiceStatus(str, PyEnum):
-    PENDING = "PENDING"
-    EXTRACTING = "EXTRACTING"
-    VALIDATING = "VALIDATING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    PARTIAL = "PARTIAL"
+from invoiceocr.models.config import settings
+from invoiceocr.models.schemas import InvoiceStatus
 
 
 def utcnow():
     return datetime.now(timezone.utc)
 
 
+Base = declarative_base()
+
+
 class Invoice(Base):
     __tablename__ = "invoices"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=lambda: uuid.uuid4())
     workflow_id = Column(String, nullable=True, unique=True)
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=True)
@@ -55,3 +59,27 @@ class ExtractionLog(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     invoice = relationship("Invoice", back_populates="logs")
+
+
+engine = create_engine(settings.postgres_url, echo=False)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def get_db():
+    """Dependency for FastAPI."""
+    with get_db_context() as db:
+        yield db
+
+
+@contextmanager
+def get_db_context() -> Session:
+    """Context manager for DB sessions."""
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()

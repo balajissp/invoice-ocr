@@ -1,11 +1,8 @@
 import os
 from sqlalchemy import engine_from_config, pool
 from alembic import context
-from dotenv import load_dotenv
 
-load_dotenv()
-
-from ui_server.models import Base
+from invoiceocr.models.db import Base
 
 config = context.config
 database_url = os.getenv("POSTGRES_URL")

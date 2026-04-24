@@ -3,33 +3,30 @@ import traceback
 import uuid
 from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from temporalio.client import Client
 
-load_dotenv()
-
-from ui_server.admin import register_admin
-from ui_server.config import (
+from invoiceocr.app.admin import register_admin
+from invoiceocr.models.config import (
     settings,
     ALLOWED_EXTENSIONS,
     MAX_FILE_SIZE,
-    construct_file_path,
 )
-from ui_server.db import get_db, engine, Base
-from ui_server.models import ExtractionLog
-from ui_server.models import Invoice, InvoiceStatus
-from ui_server.workflows import InvoiceProcessingWorkflow
-from ui_server.parser import (
+from invoiceocr.models.db import engine, Base, get_db
+from invoiceocr.models.db import ExtractionLog
+from invoiceocr.models.db import Invoice
+from invoiceocr.workflows.tasks import (
+    InvoiceProcessingWorkflow,
     extract_text_from_file,
     parse_text,
 )
-from ui_server.schemas import (
+from invoiceocr.models.schemas import (
     InvoiceUploadResponse,
     InvoiceResponse,
     HealthResponse,
+    InvoiceStatus,
 )
 from fastapi import BackgroundTasks
 
@@ -97,7 +94,7 @@ def simple_chained_task(invoice_id: str, file_type: str, db: Session):
     invoice.status = InvoiceStatus.EXTRACTING
     db.commit()
     db.refresh(invoice)
-    workflow_input = str(construct_file_path(invoice_id, file_type))
+    workflow_input = str(settings.construct_file_path(invoice_id, file_type))
     raw_text = extract_text_from_file(workflow_input)
     data, confidence = parse_text(raw_text)
 
@@ -108,6 +105,30 @@ def simple_chained_task(invoice_id: str, file_type: str, db: Session):
     invoice.extraction_confidence = confidence.model_dump()
     db.commit()
     db.refresh(invoice)
+
+
+async def extract_invoice(db: Session, invoice: Invoice) -> Invoice:
+    """Extract text from file and populate invoice record."""
+
+    # Get file type and extract text
+    file_path = settings.construct_file_path(invoice.id, invoice.file_type)
+    raw_text = extract_text_from_file(file_path)
+
+    invoice.raw_ocr_output = raw_text
+    # Parse extracted text
+    if raw_text:
+        extracted_data, confidence = parse_text(raw_text)
+        invoice.extracted_data = extracted_data.model_dump()
+        invoice.extraction_confidence = confidence.model_dump()
+        invoice.status = InvoiceStatus.COMPLETED
+    else:
+        invoice.extracted_data = {}
+        invoice.extraction_confidence = {}
+        invoice.status = InvoiceStatus.PARTIAL
+        invoice.error_message = "No text extracted"
+
+    db.commit()
+    return invoice
 
 
 # Upload endpoint
@@ -149,7 +170,7 @@ async def upload_invoice(
     db.commit()
     db.refresh(invoice)
     # Update invoice with saved filename
-    file_path = construct_file_path(invoice.id, invoice.file_type)
+    file_path = settings.construct_file_path(invoice.id, invoice.file_type)
     invoice.filename = file_path.name
     db.commit()
     db.refresh(invoice)

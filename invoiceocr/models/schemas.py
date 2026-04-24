@@ -1,10 +1,18 @@
 from datetime import datetime
+from enum import Enum as PyEnum
 from typing import Optional, Dict, Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from ui_server.models import InvoiceStatus
+
+class InvoiceStatus(str, PyEnum):
+    PENDING = "PENDING"
+    EXTRACTING = "EXTRACTING"
+    VALIDATING = "VALIDATING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    PARTIAL = "PARTIAL"
 
 
 class ExtractedDataSchema(BaseModel):
@@ -72,3 +80,12 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     temporal: str
+
+
+class ExtractionOutput(BaseModel):
+    raw_text: str
+
+
+class ParseOutput(BaseModel):
+    data: dict
+    confidence: dict

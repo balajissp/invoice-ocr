@@ -1,27 +1,25 @@
+import logging
+import re
 from datetime import timedelta
+from pathlib import Path
 
-from pydantic import BaseModel
-from temporalio import workflow, activity
+from liteparse import LiteParse
+from temporalio import activity, workflow
 from temporalio.common import RetryPolicy
 
-with workflow.unsafe.imports_passed_through():
-    from ui_server.config import construct_file_path
-    from ui_server.db import get_db_context
-    from ui_server.models import InvoiceStatus, Invoice
-    from ui_server.parser import extract_text_from_file, parse_text
+from invoiceocr.models.config import settings, ALLOWED_EXTENSIONS
+from invoiceocr.models.db import get_db_context, Invoice
+from invoiceocr.models.schemas import (
+    InvoiceStatus,
+    ExtractedDataSchema,
+    ExtractionConfidenceSchema,
+    ExtractionOutput,
+    ParseOutput,
+)
+
+logger = logging.getLogger(__name__)
 
 
-# ============= Pydantic Models =============
-class ExtractionOutput(BaseModel):
-    raw_text: str
-
-
-class ParseOutput(BaseModel):
-    data: dict
-    confidence: dict
-
-
-# ============= Activities =============
 @activity.defn
 def update_invoice_status(invoice_id: str, status: str) -> None:
     with get_db_context() as db:
@@ -32,7 +30,7 @@ def update_invoice_status(invoice_id: str, status: str) -> None:
 
 @activity.defn
 def extract_text_activity(invoice_id: str, file_type: str) -> ExtractionOutput:
-    file_path = construct_file_path(invoice_id, file_type)
+    file_path = settings.construct_file_path(invoice_id, file_type)
     raw_text = extract_text_from_file(file_path)
     return ExtractionOutput(raw_text=raw_text)
 
@@ -59,7 +57,6 @@ def save_extraction_results(
             invoice.extraction_confidence = confidence
 
 
-# ============= Workflow =============
 @workflow.defn
 class InvoiceProcessingWorkflow:
     @workflow.run
@@ -102,3 +99,60 @@ class InvoiceProcessingWorkflow:
             schedule_to_close_timeout=timedelta(seconds=30),
             retry_policy=retry_policy,
         )
+
+
+def extract_text_from_file(file_path: str) -> str:
+    file_path = Path(file_path)
+    if file_path.suffix in ALLOWED_EXTENSIONS:
+        # Parse file directly - LiteParse handles PDF/image conversion
+        parser = LiteParse()
+        result = parser.parse(file_path)
+        logger.info(f"OCR result for {file_path.name}: {result}")
+        if hasattr(result, "text"):
+            raw_text = result.text.strip()
+        else:
+            raw_text = str(result)
+    else:
+        raw_text = ""  # Not supported file type
+    return raw_text
+
+
+def parse_text(raw_text: str) -> tuple[ExtractedDataSchema, ExtractionConfidenceSchema]:
+    """Parse extracted text into structured invoice fields."""
+    extracted = ExtractedDataSchema()
+    confidence = ExtractionConfidenceSchema()
+
+    # Invoice number
+    inv_match = re.search(r"Invoice[\s:#]*([\w-]+)", raw_text, re.IGNORECASE)
+    if inv_match:
+        extracted.invoice_number = inv_match.group(1).strip()
+        confidence.invoice_number = 0.85
+
+    # Invoice date
+    date_match = re.search(r"Invoice Date[\s:#]*([\d/-]+)", raw_text, re.IGNORECASE)
+    if date_match:
+        extracted.invoice_date = date_match.group(1).strip()
+        confidence.invoice_date = 0.80
+
+    # Due date
+    due_match = re.search(r"Due Date[\s:#]*([\d/-]+)", raw_text, re.IGNORECASE)
+    if due_match:
+        extracted.due_date = due_match.group(1).strip()
+        confidence.due_date = 0.80
+
+    # Total amount
+    amount_match = re.search(r"Total[\s:#$]*([\d,.]+)", raw_text, re.IGNORECASE)
+    if amount_match:
+        amount_str = amount_match.group(1).replace(",", "")
+        extracted.total_amount = float(amount_str)
+        confidence.total_amount = 0.90
+
+    # Currency
+    if "$" in raw_text:
+        extracted.currency = "USD"
+    elif "€" in raw_text:
+        extracted.currency = "EUR"
+    elif "£" in raw_text:
+        extracted.currency = "GBP"
+
+    return extracted, confidence
