@@ -112,3 +112,33 @@ Found a bug or have a feature request? Open an issue on GitHub. Include:
 ## License
 
 MIT
+
+
+## Evaluation
+
+What’s working
+
+ • Non-blocking uploads - background processing keeps UX smooth
+
+ • Clear status lifecycle (PENDING, EXTRACTING, COMPLETED)
+
+ • Clean separation: API, workflow, DB, workers
+
+ • Retry handling for transient failures
+
+ • Structured persistence of extracted data
+
+Gaps / Improvements
+
+ • Missing error handling in workflows → weak resilience/observability
+
+ • Workflow tracking inconsistent (workflow IDs not used properly)
+
+ • Single queue for OCR + AI + DB → bottleneck, no isolation
+
+ • Sync DB calls inside async flows → performance hit
+
+ • No DB transactions → risk of partial/inconsistent writes
+
+ • Temporal client created per request → should be singleton
+ 
